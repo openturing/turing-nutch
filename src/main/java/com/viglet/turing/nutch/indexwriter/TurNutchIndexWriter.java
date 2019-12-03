@@ -17,54 +17,67 @@
 package com.viglet.turing.nutch.indexwriter;
 
 import java.lang.invoke.MethodHandles;
+import java.io.BufferedReader;
+import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.Reader;
 import java.io.UnsupportedEncodingException;
+import java.net.URL;
 import java.net.URLDecoder;
+import java.net.URLEncoder;
+import java.nio.ByteBuffer;
+import java.nio.CharBuffer;
+import java.nio.charset.Charset;
+import java.text.DateFormat;
+import java.text.ParseException;
+import java.text.SimpleDateFormat;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Date;
-import java.util.List;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.TimeZone;
 import java.util.Map.Entry;
 
 import org.apache.hadoop.conf.Configuration;
+import org.apache.http.client.methods.CloseableHttpResponse;
+import org.apache.http.client.methods.HttpPost;
+import org.apache.http.entity.StringEntity;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.apache.nutch.indexer.IndexWriter;
 import org.apache.nutch.indexer.IndexWriterParams;
 import org.apache.nutch.indexer.IndexerMapReduce;
 import org.apache.nutch.indexer.NutchDocument;
 import org.apache.nutch.indexer.NutchField;
-import org.apache.solr.client.solrj.SolrClient;
-import org.apache.solr.client.solrj.SolrServerException;
-import org.apache.solr.client.solrj.impl.CloudSolrClient;
-import org.apache.solr.client.solrj.request.UpdateRequest;
-import org.apache.solr.common.SolrInputDocument;
 import org.apache.solr.common.params.ModifiableSolrParams;
+import org.codehaus.jettison.json.JSONException;
+import org.codehaus.jettison.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.viglet.turing.api.sn.job.TurSNJobAction;
+import com.viglet.turing.api.sn.job.TurSNJobItem;
+import com.viglet.turing.api.sn.job.TurSNJobItems;
+
 public class TurNutchIndexWriter implements IndexWriter {
 
-	private static final Logger LOG = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
+	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 
-	private List<SolrClient> solrClients;
 	private ModifiableSolrParams params;
 
 	private Configuration config;
 
-	private final List<SolrInputDocument> inputDocs = new ArrayList<>();
+	private final TurSNJobItems turSNJobItems = new TurSNJobItems();
 
-	private final List<String> deleteIds = new ArrayList<>();
+	private CloseableHttpClient client = HttpClients.createDefault();
 
 	private int batchSize;
-	private int numDeletes = 0;
 	private int totalAdds = 0;
-	private int totalDeletes = 0;
 	private boolean delete = false;
 	private String weightField;
-
-	private boolean auth;
-	private String username;
-	private String password;
 
 	@Override
 	public void open(Configuration conf, String name) {
@@ -78,43 +91,13 @@ public class TurNutchIndexWriter implements IndexWriter {
 	 */
 	@Override
 	public void open(IndexWriterParams parameters) {
-		String type = parameters.get(TurNutchConstants.SERVER_TYPE, "http");
 
 		String[] urls = parameters.getStrings(TurNutchConstants.SERVER_URLS);
 
 		if (urls == null) {
 			String message = "Missing SOLR URL.\n" + describe();
-			LOG.error(message);
+			logger.error(message);
 			throw new RuntimeException(message);
-		}
-
-		this.auth = parameters.getBoolean(TurNutchConstants.USE_AUTH, false);
-		this.username = parameters.get(TurNutchConstants.USERNAME);
-		this.password = parameters.get(TurNutchConstants.PASSWORD);
-
-		this.solrClients = new ArrayList<>();
-
-		switch (type) {
-		case "http":
-			for (String url : urls) {
-				solrClients.add(TurNutchUtils.getHttpSolrClient(url));
-			}
-			break;
-		case "cloud":
-			CloudSolrClient sc = this.auth
-					? TurNutchUtils.getCloudSolrClient(Arrays.asList(urls), this.username, this.password)
-					: TurNutchUtils.getCloudSolrClient(Arrays.asList(urls));
-			sc.setDefaultCollection(parameters.get(TurNutchConstants.COLLECTION));
-			solrClients.add(sc);
-			break;
-		case "concurrent":
-			// TODO: 1/08/17 Implement this
-			throw new UnsupportedOperationException("The type \"concurrent\" is not yet supported.");
-		case "lb":
-			// TODO: 1/08/17 Implement this
-			throw new UnsupportedOperationException("The type \"lb\" is not yet supported.");
-		default:
-			throw new IllegalArgumentException("The type \"" + type + "\" is not supported.");
 		}
 
 		init(parameters);
@@ -141,24 +124,29 @@ public class TurNutchIndexWriter implements IndexWriter {
 	}
 
 	public void delete(String key) throws IOException {
+		final TurSNJobItem turSNJobItem = new TurSNJobItem();
+		turSNJobItem.setTurSNJobAction(TurSNJobAction.DELETE);
+
 		try {
 			key = URLDecoder.decode(key, "UTF8");
 		} catch (UnsupportedEncodingException e) {
-			LOG.error("Error decoding: " + key);
+			logger.error("Error decoding: " + key);
 			throw new IOException("UnsupportedEncodingException for " + key);
 		} catch (IllegalArgumentException e) {
-			LOG.warn("Could not decode: " + key + ", it probably wasn't encoded in the first place..");
+			logger.warn("Could not decode: " + key + ", it probably wasn't encoded in the first place..");
 		}
 
 		// escape solr hash separator
 		key = key.replaceAll("!", "\\!");
 
 		if (delete) {
-			deleteIds.add(key);
-			totalDeletes++;
+			Map<String, Object> attributes = new HashMap<String, Object>();
+			attributes.put("id", key);
+			turSNJobItem.setAttributes(attributes);
+			turSNJobItems.add(turSNJobItem);
 		}
 
-		if (deleteIds.size() >= batchSize) {
+		if (turSNJobItems.getTuringDocuments().size() >= batchSize) {
 			push();
 		}
 
@@ -170,9 +158,11 @@ public class TurNutchIndexWriter implements IndexWriter {
 	}
 
 	public void write(NutchDocument doc) throws IOException {
-		final SolrInputDocument inputDoc = new SolrInputDocument();
-
+		final TurSNJobItem turSNJobItem = new TurSNJobItem();
+		turSNJobItem.setTurSNJobAction(TurSNJobAction.CREATE);
+		Map<String, Object> attributes = new HashMap<String, Object>();
 		for (final Entry<String, NutchField> e : doc) {
+
 			for (final Object val : e.getValue().getValues()) {
 				// normalise the string representation for a Date
 				Object val2 = val;
@@ -184,89 +174,157 @@ public class TurNutchIndexWriter implements IndexWriter {
 				if (e.getKey().equals("content") || e.getKey().equals("title")) {
 					val2 = TurNutchUtils.stripNonCharCodepoints((String) val);
 				}
-
-				inputDoc.addField(e.getKey(), val2);
+				if (e.getKey().equals("content")) {
+					attributes.put("text", val2);
+				} else {
+					attributes.put(e.getKey(), val2);
+				}
 			}
 		}
 
 		if (!weightField.isEmpty()) {
-			inputDoc.addField(weightField, doc.getWeight());
+			attributes.put(weightField, doc.getWeight());
 		}
-		inputDocs.add(inputDoc);
+
+		attributes.put("type", "Page");
+
+		URL url = new URL(attributes.get("url").toString());
+		String path[] = url.getPath().split("/");
+		String date = null;
+		if (path.length >= 4) {
+			if (isNumeric(path[1]) && isNumeric(path[2]) && isNumeric(path[3])) {
+				date = String.format("%s/%s/%s", path[1], path[2], path[3]);
+			}
+		}
+
+		Date dt = new Date();
+		if (date != null) {
+			DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd");
+			try {
+				dt = dateFormat.parse(date);
+			} catch (ParseException e1) {
+				e1.printStackTrace();
+			}
+		}
+
+		TimeZone tz = TimeZone.getTimeZone("UTC");
+		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
+		df.setTimeZone(tz);
+		attributes.put("displaydate", df.format(dt));
+
+		String embed = "http://sample.com/wp-json/oembed/1.0/embed?url=";
+
+		String jsonURL = String.format("%s%s&format=json", embed,
+				URLEncoder.encode(attributes.get("url").toString(), "UTF-8"));
+		InputStream is = null;
+		try {
+			is = new URL(jsonURL).openStream();
+			BufferedReader rd = new BufferedReader(new InputStreamReader(is, Charset.forName("UTF-8")));
+			String jsonText = readAll(rd);
+			JSONObject json = new JSONObject(jsonText);
+			if (json.has("author_name"))
+				attributes.put("author", json.get("author_name").toString());
+
+			if (json.has("thumbnail_url"))
+				attributes.put("image", json.get("thumbnail_url").toString());
+
+		} catch (JSONException e1) {
+			System.out.println(jsonURL);
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		} catch (FileNotFoundException fnfe) {
+			// continue
+		} finally {
+			if (is != null) {
+				is.close();
+			}
+		}
+
+		turSNJobItem.setAttributes(attributes);
+		turSNJobItems.add(turSNJobItem);
 		totalAdds++;
 
-		if (inputDocs.size() + numDeletes >= batchSize) {
+		if (turSNJobItems.getTuringDocuments().size() >= batchSize) {
 			push();
 		}
 	}
 
-	public void close() throws IOException {
-		commit();
-
-		for (SolrClient solrClient : solrClients) {
-			solrClient.close();
+	private static String readAll(Reader rd) throws IOException {
+		StringBuilder sb = new StringBuilder();
+		int cp;
+		while ((cp = rd.read()) != -1) {
+			sb.append((char) cp);
 		}
+		return sb.toString();
+	}
+
+	public static boolean isNumeric(String str) {
+		return str.matches("-?\\d+(\\.\\d+)?"); // match a number with optional '-' and decimal.
 	}
 
 	@Override
 	public void commit() throws IOException {
 		push();
-		try {
-			for (SolrClient solrClient : solrClients) {
-				if (this.auth) {
-					UpdateRequest req = new UpdateRequest();
-					req.setAction(UpdateRequest.ACTION.COMMIT, true, true);
-					req.setBasicAuthCredentials(this.username, this.password);
-					solrClient.request(req);
-				} else {
-					solrClient.commit();
-				}
-			}
-		} catch (final SolrServerException e) {
-			LOG.error("Failed to commit solr connection: " + e.getMessage());
-		}
 	}
 
 	private void push() throws IOException {
-		if (inputDocs.size() > 0) {
-			try {
-				LOG.info("Indexing " + Integer.toString(inputDocs.size()) + "/" + Integer.toString(totalAdds)
-						+ " documents");
-				LOG.info("Deleting " + Integer.toString(numDeletes) + " documents");
-				numDeletes = 0;
-				UpdateRequest req = new UpdateRequest();
-				req.add(inputDocs);
-				req.setAction(UpdateRequest.ACTION.OPTIMIZE, false, false);
-				req.setParams(params);
-				if (this.auth) {
-					req.setBasicAuthCredentials(this.username, this.password);
-				}
-				for (SolrClient solrClient : solrClients) {
-					solrClient.request(req);
-				}
-			} catch (final SolrServerException e) {
-				throw makeIOException(e);
-			}
-			inputDocs.clear();
-		}
+		if (turSNJobItems.getTuringDocuments().size() > 0) {
+			int totalCreate = 0;
+			int totalDelete = 0;
 
-		if (deleteIds.size() > 0) {
-			try {
-				LOG.info("SolrIndexer: deleting " + Integer.toString(deleteIds.size()) + "/"
-						+ Integer.toString(totalDeletes) + " documents");
-				for (SolrClient solrClient : solrClients) {
-					solrClient.deleteById(deleteIds);
+			for (TurSNJobItem turSNJobItem : turSNJobItems.getTuringDocuments()) {
+				TurSNJobAction turSNJobAction = turSNJobItem.getTurSNJobAction();
+				switch (turSNJobAction) {
+				case CREATE:
+					totalCreate++;
+					break;
+				case DELETE:
+					totalDelete++;
+					break;
 				}
-			} catch (final SolrServerException e) {
-				LOG.error("Error deleting: " + deleteIds);
-				throw makeIOException(e);
 			}
-			deleteIds.clear();
-		}
-	}
 
-	private static IOException makeIOException(SolrServerException e) {
-		return new IOException(e);
+			logger.info(String.format("Indexing %d/%d documents", totalCreate, totalAdds));
+			logger.info(String.format("Deleting %d documents", totalDelete));
+
+			String turingServer = "http://localhost:2700";
+			String site = "Sample Site";
+			boolean showOutput = false;
+			String encoding = "UTF-8";
+
+			ObjectMapper mapper = new ObjectMapper();
+			String jsonResult = mapper.writeValueAsString(turSNJobItems);
+
+			Charset utf8Charset = Charset.forName("UTF-8");
+			Charset customCharset = Charset.forName(encoding);
+
+			ByteBuffer inputBuffer = ByteBuffer.wrap(jsonResult.getBytes());
+
+			// decode UTF-8
+			CharBuffer data = utf8Charset.decode(inputBuffer);
+
+			// encode
+			ByteBuffer outputBuffer = customCharset.encode(data);
+
+			byte[] outputData = new String(outputBuffer.array()).getBytes("UTF-8");
+			String jsonUTF8 = new String(outputData);
+
+			HttpPost httpPost = new HttpPost(String.format("%s/api/sn/%s/import", turingServer, site));
+			if (showOutput) {
+				logger.info(jsonUTF8);
+			}
+			StringEntity entity = new StringEntity(new String(jsonUTF8), "UTF-8");
+			httpPost.setEntity(entity);
+			httpPost.setHeader("Accept", "application/json");
+			httpPost.setHeader("Content-type", "application/json");
+			httpPost.setHeader("Accept-Encoding", "UTF-8");
+
+			@SuppressWarnings("unused")
+			CloseableHttpResponse response = client.execute(httpPost);
+
+			turSNJobItems.getTuringDocuments().clear();
+
+		}
 	}
 
 	@Override
@@ -288,15 +346,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 	@Override
 	public String describe() {
 		StringBuffer sb = new StringBuffer("TurNutchIndexWriter\n");
-		sb.append("\t").append(TurNutchConstants.SERVER_TYPE)
-				.append(" : Type of the server. Can be: \"cloud\", \"concurrent\", \"http\" or \"lb\"\n");
-		sb.append("\t").append(TurNutchConstants.SERVER_URLS)
-				.append(" : URL of the SOLR instance or URL of the Zookeeper quorum\n");
-		sb.append("\t").append(TurNutchConstants.COMMIT_SIZE)
-				.append(" : buffer size when sending to SOLR (default 1000)\n");
-		sb.append("\t").append(TurNutchConstants.USE_AUTH).append(" : use authentication (default false)\n");
-		sb.append("\t").append(TurNutchConstants.USERNAME).append(" : username for authentication\n");
-		sb.append("\t").append(TurNutchConstants.PASSWORD).append(" : password for authentication\n");
+		sb.append("\t").append("Indexing to Viglet Turing Semantic Navigation");
 		return sb.toString();
+	}
+
+	@Override
+	public void close() throws IOException {
+		client.close();
 	}
 }
