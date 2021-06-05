@@ -3,7 +3,6 @@ package com.viglet.turing.nutch.indexwriter;
 import java.lang.invoke.MethodHandles;
 import java.net.URL;
 import java.net.URLDecoder;
-import java.net.URLEncoder;
 import java.nio.ByteBuffer;
 import java.nio.CharBuffer;
 import java.nio.charset.Charset;
@@ -11,12 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.text.DateFormat;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
-import java.io.BufferedReader;
-import java.io.FileNotFoundException;
 import java.io.IOException;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.time.format.DateTimeFormatter;
 import java.util.AbstractMap;
@@ -41,15 +35,13 @@ import org.apache.nutch.indexer.IndexerMapReduce;
 import org.apache.nutch.indexer.NutchDocument;
 import org.apache.nutch.indexer.NutchField;
 import org.apache.solr.common.params.ModifiableSolrParams;
-import org.codehaus.jettison.json.JSONException;
-import org.codehaus.jettison.json.JSONObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.viglet.turing.api.sn.job.TurSNJobAction;
-import com.viglet.turing.api.sn.job.TurSNJobItem;
-import com.viglet.turing.api.sn.job.TurSNJobItems;
+import com.viglet.turing.client.sn.job.TurSNJobAction;
+import com.viglet.turing.client.sn.job.TurSNJobItem;
+import com.viglet.turing.client.sn.job.TurSNJobItems;
 
 public class TurNutchIndexWriter implements IndexWriter {
 
@@ -60,16 +52,15 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	private Configuration config;
 
-	private String type;
-	private String[] urls;
-	private String collection;
+	private String url;
+	private String site;
+	private boolean auth;
 
 	private int batchSize;
 	private int totalAdds = 0;
 	private boolean delete = false;
 	private String weightField;
 
-	private boolean auth;
 	private String username;
 	private String password;
 
@@ -80,22 +71,26 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	@Override
 	public void open(IndexWriterParams parameters) {
-		String[] urls = parameters.getStrings(TurNutchConstants.SERVER_URLS);
+		this.url = parameters.get(TurNutchConstants.SERVER_URL);
+		this.site = parameters.get(TurNutchConstants.SITE);
 
-		if (urls == null) {
+		if (url == null) {
 			String message = "Missing Turing URL.\n" + describe();
 			logger.error(message);
 			throw new RuntimeException(message);
 		}
 
+		this.auth = parameters.getBoolean(TurNutchConstants.USE_AUTH, false);
+		this.username = parameters.get(TurNutchConstants.USERNAME);
+		this.password = parameters.get(TurNutchConstants.PASSWORD);
+
 		init(parameters);
 	}
 
 	private void init(IndexWriterParams properties) {
-		batchSize = properties.getInt(TurNutchConstants.COMMIT_SIZE, 1000);
 		delete = config.getBoolean(IndexerMapReduce.INDEXER_DELETE, false);
+		batchSize = properties.getInt(TurNutchConstants.COMMIT_SIZE, 1000);
 		weightField = properties.get(TurNutchConstants.WEIGHT_FIELD, "");
-
 		// parse optional params
 		params = new ModifiableSolrParams();
 		String paramString = config.get(IndexerMapReduce.INDEXER_PARAMS);
@@ -201,34 +196,6 @@ public class TurNutchIndexWriter implements IndexWriter {
 		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
 		df.setTimeZone(tz);
 		attributes.put("displaydate", df.format(dt));
-/*
-		String embed = "http://sample.com/wp-json/oembed/1.0/embed?url=";
-
-		String jsonURL = String.format("%s%s&format=json", embed,
-				URLEncoder.encode(attributes.get("url").toString(), "UTF-8"));
-		InputStream is = null;
-		try {
-			is = new URL(jsonURL).openStream();
-			BufferedReader rd = new BufferedReader(new InputStreamReader(is, Charset.forName("UTF-8")));
-			String jsonText = readAll(rd);
-			JSONObject json = new JSONObject(jsonText);
-			if (json.has("author_name"))
-				attributes.put("author", json.get("author_name").toString());
-
-			if (json.has("thumbnail_url"))
-				attributes.put("image", json.get("thumbnail_url").toString());
-
-		} catch (JSONException e1) {
-			System.out.println(jsonURL);
-			e1.printStackTrace();
-		} catch (FileNotFoundException fnfe) {
-			// continue
-		} finally {
-			if (is != null) {
-				is.close();
-			}
-		}
-*/
 		turSNJobItem.setAttributes(attributes);
 		turSNJobItems.add(turSNJobItem);
 		totalAdds++;
@@ -268,8 +235,6 @@ public class TurNutchIndexWriter implements IndexWriter {
 			logger.info(String.format("Indexing %d/%d documents", totalCreate, totalAdds));
 			logger.info(String.format("Deleting %d documents", totalDelete));
 
-			String turingServer = "http://localhost:2700";
-			String site = "Sample";
 			boolean showOutput = false;
 			String encoding = "UTF-8";
 
@@ -290,7 +255,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 			byte[] outputData = new String(outputBuffer.array()).getBytes("UTF-8");
 			String jsonUTF8 = new String(outputData);
 
-			HttpPost httpPost = new HttpPost(String.format("%s/api/sn/%s/import", turingServer, site));
+			HttpPost httpPost = new HttpPost(String.format("%s/api/sn/%s/import", this.url, this.site));
 			if (showOutput) {
 				logger.info(jsonUTF8);
 			}
@@ -299,8 +264,11 @@ public class TurNutchIndexWriter implements IndexWriter {
 			httpPost.setHeader("Accept", "application/json");
 			httpPost.setHeader("Content-type", "application/json");
 			httpPost.setHeader("Accept-Encoding", "UTF-8");
-			basicAuth(httpPost);
-			
+
+			if (this.auth) {
+				basicAuth(httpPost);
+			}
+
 			@SuppressWarnings("unused")
 			CloseableHttpResponse response = client.execute(httpPost);
 
@@ -322,19 +290,10 @@ public class TurNutchIndexWriter implements IndexWriter {
 	@Override
 	public Map<String, Entry<String, Object>> describe() {
 		Map<String, Entry<String, Object>> properties = new LinkedHashMap<>();
-
-		properties.put(TurNutchConstants.SERVER_TYPE, new AbstractMap.SimpleEntry<>(
-				"Specifies the SolrClient implementation to use. This is a string value of one of the following \"cloud\" or \"http\"."
-						+ " The values represent CloudSolrServer or HttpSolrServer respectively.",
-				this.type));
-		properties.put(TurNutchConstants.SERVER_URLS, new AbstractMap.SimpleEntry<>(
-				"Defines the fully qualified URL of Turing into which data should be indexed. Multiple URL can be provided using comma as a delimiter."
-						+ " When the value of type property is cloud, the URL should not include any collections or cores; just the root Turing path.",
-				this.urls == null ? "" : String.join(",", urls)));
-		properties.put(TurNutchConstants.COLLECTION,
-				new AbstractMap.SimpleEntry<>(
-						"The collection used in requests. Only used when the value of type property is cloud.",
-						this.collection));
+		properties.put(TurNutchConstants.SERVER_URL,
+				new AbstractMap.SimpleEntry<>("Defines the fully qualified URL of Turing.", this.url));
+		properties.put(TurNutchConstants.SITE,
+				new AbstractMap.SimpleEntry<>("Defines the Turing Semantic Navigation Site.", this.url));
 		properties.put(TurNutchConstants.COMMIT_SIZE, new AbstractMap.SimpleEntry<>(
 				"Defines the number of documents to send to Turing in a single update batch. "
 						+ "Decrease when handling very large documents to prevent Nutch from running out of memory.\n"
@@ -344,7 +303,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 				"Field's name where the weight of the documents will be written. If it is empty no field will be used.",
 				this.weightField));
 		properties.put(TurNutchConstants.USE_AUTH, new AbstractMap.SimpleEntry<>(
-				"Whether to enable HTTP basic authentication for communicating with Solr. Use the username and password properties to configure your credentials.",
+				"Whether to enable HTTP basic authentication for communicating with Turing. Use the username and password properties to configure your credentials.",
 				this.auth));
 		properties.put(TurNutchConstants.USERNAME,
 				new AbstractMap.SimpleEntry<>("The username of Turing server.", this.username));
@@ -353,6 +312,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 		return properties;
 	}
+
 	private void basicAuth(HttpPost httpPost) {
 		this.username = "admin";
 		this.password = "admin";
@@ -364,16 +324,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 		}
 	}
 
-	private static String readAll(Reader rd) throws IOException {
-		StringBuilder sb = new StringBuilder();
-		int cp;
-		while ((cp = rd.read()) != -1) {
-			sb.append((char) cp);
-		}
-		return sb.toString();
-	}
-
-	public static boolean isNumeric(String str) {
+	private static boolean isNumeric(String str) {
 		return str.matches("-?\\d+(\\.\\d+)?"); // match a number with optional '-' and decimal.
 	}
 }

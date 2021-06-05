@@ -9,6 +9,7 @@ buildscript {
 		mavenCentral()
 		maven { url "https://repo.spring.io/snapshot" }
 		maven { url "https://repo.spring.io/milestone" }
+		maven { url 'https://jitpack.io' }
 		jcenter()
 		}
 }
@@ -28,6 +29,7 @@ repositories {
 	mavenCentral()
 	maven { url "https://repo.spring.io/snapshot" }
 	maven { url "https://repo.spring.io/milestone" }
+	maven { url 'https://jitpack.io' }
 }
 
 sourceCompatibility = 1.8
@@ -50,7 +52,7 @@ dependencies {
     implementation group: 'org.apache.httpcomponents', name: 'httpmime', version:"4.5.10"
     implementation group: 'org.apache.hadoop', name: 'hadoop-core', version: '0.20.2'
    	implementation group: 'org.apache.hadoop', name: 'hadoop-common', version: '3.1.3'
-    
+	implementation group: 'com.github.openturing', name: 'turing-java-sdk', version: '0.3.3'
 }
 
 test {
