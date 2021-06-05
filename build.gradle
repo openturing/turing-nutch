@@ -47,23 +47,33 @@ task stage(dependsOn: ['build', 'clean'])
 task copyLibs(type: Copy) {
 	configurations.localDeps.setCanBeResolved(true)
     from configurations.localDeps
-    into 'lib'
-    
+    into '$buildDir/extracted_dist/indexer-viglet-turing/'
+
     from "plugin.xml"
-    into "lib"
-    
+    into "$buildDir/extracted_dist/indexer-viglet-turing/"
+
     from "$buildDir/libs/indexer-viglet-turing.jar"
-    into "lib"
+    into "$buildDir/extracted_dist/indexer-viglet-turing/"
+
+}
+
+task copyConfs(type: Copy) {
+	configurations.localDeps.setCanBeResolved(true)
+
+    from "conf"
+    into "$buildDir/extracted_dist/conf/"
+
 
 }
 
 task packageDistribution(type: Zip) {
     archiveFileName = "indexer-viglet-turing.zip"
     destinationDirectory = file("$buildDir/dist")
-    from "lib"
+    from "$buildDir/extracted_dist"
 }
 
-copyLibs.dependsOn build
+copyConfs.dependsOn build
+copyLibs.dependsOn copyConfs
 packageDistribution.dependsOn copyLibs
 
 build.dependsOn 
