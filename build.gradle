@@ -67,7 +67,7 @@ task copyConfs(type: Copy) {
 }
 
 task packageDistribution(type: Zip) {
-    archiveFileName = "indexer-viglet-turing.zip"
+    archiveFileName = "turing-nutch.zip"
     destinationDirectory = file("$buildDir/dist")
     from "$buildDir/extracted_dist"
 }

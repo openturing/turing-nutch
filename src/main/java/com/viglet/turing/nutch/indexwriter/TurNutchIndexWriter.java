@@ -223,12 +223,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 			for (TurSNJobItem turSNJobItem : turSNJobItems.getTuringDocuments()) {
 				TurSNJobAction turSNJobAction = turSNJobItem.getTurSNJobAction();
 				switch (turSNJobAction) {
-				case CREATE:
-					totalCreate++;
-					break;
-				case DELETE:
-					totalDelete++;
-					break;
+					case CREATE:
+						totalCreate++;
+						break;
+					case DELETE:
+						totalDelete++;
+						break;
 				}
 			}
 
@@ -314,8 +314,6 @@ public class TurNutchIndexWriter implements IndexWriter {
 	}
 
 	private void basicAuth(HttpPost httpPost) {
-		this.username = "admin";
-		this.password = "admin";
 		if (this.username != null) {
 			String auth = String.format("%s:%s", this.username, this.password);
 			String encodedAuth = Base64.getEncoder().encodeToString(auth.getBytes(StandardCharsets.UTF_8));
