@@ -1,4 +1,4 @@
-= Crawler
+= Plugin for Apache Nutch for Turing AI
 Plugin for Apache Nutch to index content using crawler.
 
 == Installation
