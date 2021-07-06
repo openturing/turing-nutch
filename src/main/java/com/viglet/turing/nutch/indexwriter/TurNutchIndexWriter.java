@@ -1,6 +1,8 @@
 package com.viglet.turing.nutch.indexwriter;
 
 import java.lang.invoke.MethodHandles;
+import java.lang.management.ManagementFactory;
+import java.lang.management.RuntimeMXBean;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.ByteBuffer;
@@ -18,6 +20,7 @@ import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TimeZone;
@@ -71,18 +74,29 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	@Override
 	public void open(IndexWriterParams parameters) {
-		this.url = parameters.get(TurNutchConstants.SERVER_URL);
-		this.site = parameters.get(TurNutchConstants.SITE);
+		this.url = this.config.get("turing.".concat(TurNutchConstants.SERVER_URL)) != null
+				? this.config.get("turing.".concat(TurNutchConstants.SERVER_URL))
+				: parameters.get(TurNutchConstants.SERVER_URL);
+
+		this.site = this.config.get("turing.".concat(TurNutchConstants.SITE)) != null
+				? this.config.get("turing.".concat(TurNutchConstants.SITE))
+				: parameters.get(TurNutchConstants.SITE);
 
 		if (url == null) {
 			String message = "Missing Turing URL.\n" + describe();
 			logger.error(message);
 			throw new RuntimeException(message);
 		}
+		this.auth = this.config.get("turing.".concat(TurNutchConstants.USE_AUTH)) != null
+				? this.config.getBoolean("turing.".concat(TurNutchConstants.USE_AUTH), false)
+				: parameters.getBoolean(TurNutchConstants.USE_AUTH, false);
 
-		this.auth = parameters.getBoolean(TurNutchConstants.USE_AUTH, false);
-		this.username = parameters.get(TurNutchConstants.USERNAME);
-		this.password = parameters.get(TurNutchConstants.PASSWORD);
+		this.username = this.config.get("turing.".concat(TurNutchConstants.USERNAME)) != null
+				? this.config.get("turing.".concat(TurNutchConstants.USERNAME))
+				: parameters.get(TurNutchConstants.USERNAME);
+		this.password = this.config.get("turing.".concat(TurNutchConstants.PASSWORD)) != null
+				? this.config.get("turing.".concat(TurNutchConstants.PASSWORD))
+				: parameters.get(TurNutchConstants.PASSWORD);
 
 		init(parameters);
 	}
@@ -223,12 +237,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 			for (TurSNJobItem turSNJobItem : turSNJobItems.getTuringDocuments()) {
 				TurSNJobAction turSNJobAction = turSNJobItem.getTurSNJobAction();
 				switch (turSNJobAction) {
-					case CREATE:
-						totalCreate++;
-						break;
-					case DELETE:
-						totalDelete++;
-						break;
+				case CREATE:
+					totalCreate++;
+					break;
+				case DELETE:
+					totalDelete++;
+					break;
 				}
 			}
 
@@ -289,11 +303,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	@Override
 	public Map<String, Entry<String, Object>> describe() {
+
 		Map<String, Entry<String, Object>> properties = new LinkedHashMap<>();
 		properties.put(TurNutchConstants.SERVER_URL,
 				new AbstractMap.SimpleEntry<>("Defines the fully qualified URL of Turing.", this.url));
 		properties.put(TurNutchConstants.SITE,
-				new AbstractMap.SimpleEntry<>("Defines the Turing Semantic Navigation Site.", this.url));
+				new AbstractMap.SimpleEntry<>("Defines the Turing Semantic Navigation Site.", this.site));
 		properties.put(TurNutchConstants.COMMIT_SIZE, new AbstractMap.SimpleEntry<>(
 				"Defines the number of documents to send to Turing in a single update batch. "
 						+ "Decrease when handling very large documents to prevent Nutch from running out of memory.\n"
