@@ -1,8 +1,6 @@
 package com.viglet.turing.nutch.indexwriter;
 
 import java.lang.invoke.MethodHandles;
-import java.lang.management.ManagementFactory;
-import java.lang.management.RuntimeMXBean;
 import java.net.URL;
 import java.net.URLDecoder;
 import java.nio.ByteBuffer;
@@ -16,11 +14,11 @@ import java.io.IOException;
 import java.io.UnsupportedEncodingException;
 import java.time.format.DateTimeFormatter;
 import java.util.AbstractMap;
+import java.util.Arrays;
 import java.util.Base64;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
 import java.util.TimeZone;
@@ -74,14 +72,20 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	@Override
 	public void open(IndexWriterParams parameters) {
-		this.url = this.config.get("turing.".concat(TurNutchConstants.SERVER_URL)) != null
-				? this.config.get("turing.".concat(TurNutchConstants.SERVER_URL))
-				: parameters.get(TurNutchConstants.SERVER_URL);
+		if (this.config.get("solr.server.url") != null) {
+			String[] fullUrl = this.config.get("solr.server.url").split("/");
+			this.site = fullUrl[fullUrl.length - 1];
+			String[] partialUrl = Arrays.copyOf(fullUrl, fullUrl.length - 1);
+			this.url = String.join("/", partialUrl);
+		} else {
+			this.url = this.config.get("turing.".concat(TurNutchConstants.SERVER_URL)) != null
+					? this.config.get("turing.".concat(TurNutchConstants.SERVER_URL))
+					: parameters.get(TurNutchConstants.SERVER_URL);
 
-		this.site = this.config.get("turing.".concat(TurNutchConstants.SITE)) != null
-				? this.config.get("turing.".concat(TurNutchConstants.SITE))
-				: parameters.get(TurNutchConstants.SITE);
-
+			this.site = this.config.get("turing.".concat(TurNutchConstants.SITE)) != null
+					? this.config.get("turing.".concat(TurNutchConstants.SITE))
+					: parameters.get(TurNutchConstants.SITE);
+		}
 		if (url == null) {
 			String message = "Missing Turing URL.\n" + describe();
 			logger.error(message);
@@ -237,12 +241,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 			for (TurSNJobItem turSNJobItem : turSNJobItems.getTuringDocuments()) {
 				TurSNJobAction turSNJobAction = turSNJobItem.getTurSNJobAction();
 				switch (turSNJobAction) {
-				case CREATE:
-					totalCreate++;
-					break;
-				case DELETE:
-					totalDelete++;
-					break;
+					case CREATE:
+						totalCreate++;
+						break;
+					case DELETE:
+						totalDelete++;
+						break;
 				}
 			}
 
