@@ -71,7 +71,7 @@ task copyConfs(type: Copy) {
 }
 
 task packageDistribution(type: Zip) {
-    archiveFileName = "turing-nutch1_12.zip"
+    archiveFileName = "turing-nutch-1.12-bin.zip"
     destinationDirectory = file("$buildDir/dist")
     from "$buildDir/extracted_dist"
 }

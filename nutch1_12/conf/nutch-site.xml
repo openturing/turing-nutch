@@ -54,8 +54,7 @@
   <name>solr.server.url</name>
   <value>http://127.0.0.1:2700/Sample</value>
   <description>
-      Defines the Solr URL into which data should be indexed using the
-      indexer-solr plugin.
+      Turing URL + "/" + Turing Semantic Navigation Site.
   </description>
 </property>
 <property>
