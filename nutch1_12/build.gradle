@@ -44,6 +44,10 @@ tasks.withType(JavaCompile) {
 
 task stage(dependsOn: ['build', 'clean'])
 
+task cleanDistribution(type: Delete) {
+    delete "$buildDir/extracted_dist/"
+}
+
 task copyLibs(type: Copy) {
 	configurations.localDeps.setCanBeResolved(true)
     from configurations.localDeps
@@ -60,7 +64,7 @@ task copyLibs(type: Copy) {
 task copyConfs(type: Copy) {
 	configurations.localDeps.setCanBeResolved(true)
 
-    from "conf"
+    from "../conf"
     into "$buildDir/extracted_dist/conf/"
 
 
@@ -71,8 +75,8 @@ task packageDistribution(type: Zip) {
     destinationDirectory = file("$buildDir/dist")
     from "$buildDir/extracted_dist"
 }
-
-copyConfs.dependsOn build
+cleanDistribution.dependsOn build
+copyConfs.dependsOn cleanDistribution
 copyLibs.dependsOn copyConfs
 packageDistribution.dependsOn copyLibs
 
@@ -82,17 +86,18 @@ build.mustRunAfter clean
 dependencies {
 
     implementation group: 'org.apache.nutch', name: 'nutch', version: '1.12'
-    implementation group: 'org.apache.solr', name: 'solr-solrj', version: "5.4.1"    
-    implementation group: 'org.apache.httpcomponents', name: 'httpcore', version:"4.4.1"
-    implementation group: 'org.apache.httpcomponents', name: 'httpmime', version:"4.5.1"
+    implementation group: 'org.apache.solr', name: 'solr-solrj', version: '5.4.1'
+    implementation group: 'org.apache.httpcomponents', name: 'httpclient', version:"4.4.1", force:true
+    implementation group: 'org.apache.httpcomponents', name: 'httpcore', version:"4.4.1", force:true
+    implementation group: 'org.apache.httpcomponents', name: 'httpmime', version:"4.4.1"
 	implementation group: 'com.github.openturing', name: 'turing-java-sdk', version: '0.3.3'
 	
 	localDeps group: 'org.apache.solr', name: 'solr-solrj', version: "5.4.1"
-    localDeps group: 'org.apache.httpcomponents', name: 'httpcore', version:"4.4.1"
+	localDeps group: 'org.apache.httpcomponents', name: 'httpclient', version:"4.4.1", force:true
+    localDeps group: 'org.apache.httpcomponents', name: 'httpcore', version:"4.4.1", force:true
     localDeps group: 'org.apache.httpcomponents', name: 'httpmime', version:"4.4.1"
     localDeps group: 'com.github.openturing', name: 'turing-java-sdk', version: '0.3.3'
 }
-
 test {
     testLogging {
         events "passed", "skipped", "failed"

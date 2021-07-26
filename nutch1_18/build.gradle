@@ -44,6 +44,10 @@ tasks.withType(JavaCompile) {
 
 task stage(dependsOn: ['build', 'clean'])
 
+
+task cleanDistribution(type: Delete) {
+    delete "$buildDir/extracted_dist/"
+}
 task copyLibs(type: Copy) {
 	configurations.localDeps.setCanBeResolved(true)
     from configurations.localDeps
@@ -60,7 +64,7 @@ task copyLibs(type: Copy) {
 task copyConfs(type: Copy) {
 	configurations.localDeps.setCanBeResolved(true)
 
-    from "conf"
+    from "../conf"
     into "$buildDir/extracted_dist/conf/"
 
 
@@ -72,7 +76,8 @@ task packageDistribution(type: Zip) {
     from "$buildDir/extracted_dist"
 }
 
-copyConfs.dependsOn build
+cleanDistribution.dependsOn build
+copyConfs.dependsOn cleanDistribution
 copyLibs.dependsOn copyConfs
 packageDistribution.dependsOn copyLibs
 

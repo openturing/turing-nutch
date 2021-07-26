@@ -46,6 +46,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final TurSNJobItems turSNJobItems = new TurSNJobItems();
+	private final Date dateTest = new Date();
 	private CloseableHttpClient client = HttpClients.createDefault();
 	private ModifiableSolrParams params;
 
@@ -55,7 +56,6 @@ public class TurNutchIndexWriter implements IndexWriter {
 	private String site;
 	private boolean auth;
 
-	private int batchSize;
 	private int totalAdds = 0;
 	private boolean delete = false;
 	private String weightField;
@@ -87,9 +87,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 			turSNJobItems.add(turSNJobItem);
 		}
 
-		if (turSNJobItems.getTuringDocuments().size() >= batchSize) {
-			push();
-		}
+		push();
 
 	}
 
@@ -104,9 +102,8 @@ public class TurNutchIndexWriter implements IndexWriter {
 		turSNJobItem.setTurSNJobAction(TurSNJobAction.CREATE);
 		Map<String, Object> attributes = new HashMap<String, Object>();
 		for (final Entry<String, NutchField> e : doc) {
-
 			for (final Object val : e.getValue().getValues()) {
-				// normalise the string representation for a Date
+				// normalize the string representation for a Date
 				Object val2 = val;
 
 				if (val instanceof Date) {
@@ -156,10 +153,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 		turSNJobItem.setAttributes(attributes);
 		turSNJobItems.add(turSNJobItem);
 		totalAdds++;
-
-		if (turSNJobItems.getTuringDocuments().size() >= batchSize) {
 			push();
-		}
 	}
 
 	@Override
@@ -265,12 +259,11 @@ public class TurNutchIndexWriter implements IndexWriter {
 			String[] partialUrl = Arrays.copyOf(fullUrl, fullUrl.length - 1);
 			this.url = String.join("/", partialUrl);
 		} else {
-			this.url = this.config.get("turing.".concat(TurNutchConstants.SERVER_URL)) != null
-					? this.config.get("turing.".concat(TurNutchConstants.SERVER_URL))
+			this.url = this.config.get(TurNutchConstants.SERVER_URL) != null
+					? this.config.get(TurNutchConstants.SERVER_URL)
 					: job.get(TurNutchConstants.SERVER_URL);
 
-			this.site = this.config.get("turing.".concat(TurNutchConstants.SITE)) != null
-					? this.config.get("turing.".concat(TurNutchConstants.SITE))
+			this.site = this.config.get(TurNutchConstants.SITE) != null ? this.config.get(TurNutchConstants.SITE)
 					: job.get(TurNutchConstants.SITE);
 		}
 		if (url == null) {
@@ -278,23 +271,34 @@ public class TurNutchIndexWriter implements IndexWriter {
 			logger.error(message);
 			throw new RuntimeException(message);
 		}
-		this.auth = this.config.get("turing.".concat(TurNutchConstants.USE_AUTH)) != null
-				? this.config.getBoolean("turing.".concat(TurNutchConstants.USE_AUTH), false)
+		this.auth = this.config.get(TurNutchConstants.USE_AUTH) != null
+				? this.config.getBoolean(TurNutchConstants.USE_AUTH, false)
 				: job.getBoolean(TurNutchConstants.USE_AUTH, false);
 
-		this.username = this.config.get("turing.".concat(TurNutchConstants.USERNAME)) != null
-				? this.config.get("turing.".concat(TurNutchConstants.USERNAME))
+		this.username = this.config.get(TurNutchConstants.USERNAME) != null
+				? this.config.get(TurNutchConstants.USERNAME)
 				: job.get(TurNutchConstants.USERNAME);
-		this.password = this.config.get("turing.".concat(TurNutchConstants.PASSWORD)) != null
-				? this.config.get("turing.".concat(TurNutchConstants.PASSWORD))
+		this.password = this.config.get(TurNutchConstants.PASSWORD) != null
+				? this.config.get(TurNutchConstants.PASSWORD)
 				: job.get(TurNutchConstants.PASSWORD);
 
 		init(job);
+		StringBuffer sb = new StringBuffer();
+		describeLine(sb, TurNutchConstants.SERVER_URL, "Defines the fully qualified URL of Turing.", this.url);
+		describeLine(sb, TurNutchConstants.SITE, "Defines the Turing Semantic Navigation Site.", this.site);
+		describeLine(sb, TurNutchConstants.WEIGHT_FIELD,
+				"Field's name where the weight of the documents will be written. If it is empty no field will be used.",
+				this.weightField);
+		describeLine(sb, TurNutchConstants.USE_AUTH,
+				"Whether to enable HTTP basic authentication for communicating with Turing. Use the username and password properties to configure your credentials.",
+				Boolean.toString(this.auth));
+		describeLine(sb, TurNutchConstants.USERNAME, "The username of Turing server.", this.username);
+		describeLine(sb, TurNutchConstants.PASSWORD, "The password of Turing server.", this.password);
+		logger.info(sb.toString());
 	}
 
 	private void init(JobConf job) {
 		delete = config.getBoolean(IndexerMapReduce.INDEXER_DELETE, false);
-		batchSize = job.getInt(TurNutchConstants.COMMIT_SIZE, 1000);
 		weightField = job.get(TurNutchConstants.WEIGHT_FIELD, "");
 		// parse optional params
 		params = new ModifiableSolrParams();
@@ -317,7 +321,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 		sb.append("\t").append("Indexing to Viglet Turing Semantic Navigation");
 		return sb.toString();
 	}
-	
+
+	void describeLine(StringBuffer sb, String variable, String description, String value) {
+		sb.append("\n").append(variable).append("\t").append(description).append("\t").append(value);
+
+	}
+
 	static String stripNonCharCodepoints(String input) {
 		StringBuilder retval = new StringBuilder();
 		char ch;
