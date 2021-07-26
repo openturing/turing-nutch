@@ -64,7 +64,7 @@ task copyLibs(type: Copy) {
 task copyConfs(type: Copy) {
 	configurations.localDeps.setCanBeResolved(true)
 
-    from "../conf"
+    from "conf"
     into "$buildDir/extracted_dist/conf/"
 
 
