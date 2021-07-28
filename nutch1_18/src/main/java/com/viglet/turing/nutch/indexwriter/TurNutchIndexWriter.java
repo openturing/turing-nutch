@@ -241,12 +241,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 			for (TurSNJobItem turSNJobItem : turSNJobItems.getTuringDocuments()) {
 				TurSNJobAction turSNJobAction = turSNJobItem.getTurSNJobAction();
 				switch (turSNJobAction) {
-					case CREATE:
-						totalCreate++;
-						break;
-					case DELETE:
-						totalDelete++;
-						break;
+				case CREATE:
+					totalCreate++;
+					break;
+				case DELETE:
+					totalDelete++;
+					break;
 				}
 			}
 
@@ -287,10 +287,12 @@ public class TurNutchIndexWriter implements IndexWriter {
 				basicAuth(httpPost);
 			}
 
-			@SuppressWarnings("unused")
-			CloseableHttpResponse response = client.execute(httpPost);
+			try (CloseableHttpResponse response = client.execute(httpPost)) {
+				turSNJobItems.getTuringDocuments().clear();
 
-			turSNJobItems.getTuringDocuments().clear();
+			} catch (IOException e) {
+				logger.error("Error", e);
+			}
 
 		}
 	}
@@ -344,7 +346,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 	private static boolean isNumeric(String str) {
 		return str.matches("-?\\d+(\\.\\d+)?"); // match a number with optional '-' and decimal.
 	}
-	
+
 	static String stripNonCharCodepoints(String input) {
 		StringBuilder retval = new StringBuilder();
 		char ch;

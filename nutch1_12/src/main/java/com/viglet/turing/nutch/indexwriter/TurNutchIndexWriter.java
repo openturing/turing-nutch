@@ -153,7 +153,7 @@ public class TurNutchIndexWriter implements IndexWriter {
 		turSNJobItem.setAttributes(attributes);
 		turSNJobItems.add(turSNJobItem);
 		totalAdds++;
-			push();
+		push();
 	}
 
 	@Override
@@ -220,11 +220,11 @@ public class TurNutchIndexWriter implements IndexWriter {
 				basicAuth(httpPost);
 			}
 
-			@SuppressWarnings("unused")
-			CloseableHttpResponse response = client.execute(httpPost);
-
-			turSNJobItems.getTuringDocuments().clear();
-
+			try (CloseableHttpResponse response = client.execute(httpPost)) {
+				turSNJobItems.getTuringDocuments().clear();
+			} catch (IOException e) {
+				logger.error("Error", e);
+			}
 		}
 	}
 
