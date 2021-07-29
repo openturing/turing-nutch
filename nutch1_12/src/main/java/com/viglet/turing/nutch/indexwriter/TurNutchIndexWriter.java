@@ -46,7 +46,6 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	private static final Logger logger = LoggerFactory.getLogger(MethodHandles.lookup().lookupClass());
 	private final TurSNJobItems turSNJobItems = new TurSNJobItems();
-	private final Date dateTest = new Date();
 	private CloseableHttpClient client = HttpClients.createDefault();
 	private ModifiableSolrParams params;
 
@@ -253,36 +252,32 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 	@Override
 	public void open(JobConf job, String name) throws IOException {
-		if (this.config.get("solr.server.url") != null) {
-			String[] fullUrl = this.config.get("solr.server.url").split("/");
-			this.site = fullUrl[fullUrl.length - 1];
-			String[] partialUrl = Arrays.copyOf(fullUrl, fullUrl.length - 1);
-			this.url = String.join("/", partialUrl);
+		if (this.config.get(TurNutchConstants.FORCE_CONFIG) != null
+				&& this.config.get(TurNutchConstants.FORCE_CONFIG).equals("true")) {
+			useTuringConfig();
 		} else {
-			this.url = this.config.get(TurNutchConstants.SERVER_URL) != null
-					? this.config.get(TurNutchConstants.SERVER_URL)
-					: job.get(TurNutchConstants.SERVER_URL);
-
-			this.site = this.config.get(TurNutchConstants.SITE) != null ? this.config.get(TurNutchConstants.SITE)
-					: job.get(TurNutchConstants.SITE);
+			if (this.config.get("solr.server.url") != null) {
+				useSolrConfig();
+			} else {
+				useTuringConfig();
+			}
 		}
 		if (url == null) {
 			String message = "Missing Turing URL.\n" + describe();
 			logger.error(message);
 			throw new RuntimeException(message);
 		}
-		this.auth = this.config.get(TurNutchConstants.USE_AUTH) != null
-				? this.config.getBoolean(TurNutchConstants.USE_AUTH, false)
-				: job.getBoolean(TurNutchConstants.USE_AUTH, false);
-
-		this.username = this.config.get(TurNutchConstants.USERNAME) != null
-				? this.config.get(TurNutchConstants.USERNAME)
-				: job.get(TurNutchConstants.USERNAME);
-		this.password = this.config.get(TurNutchConstants.PASSWORD) != null
-				? this.config.get(TurNutchConstants.PASSWORD)
-				: job.get(TurNutchConstants.PASSWORD);
-
+		
+		this.auth = this.config.getBoolean(TurNutchConstants.USE_AUTH, false);
+		this.username = this.config.get(TurNutchConstants.USERNAME, "admin");
+		this.password = this.config.get(TurNutchConstants.PASSWORD, "admin");
+		
 		init(job);
+
+		logger.info(describeText());
+	}
+
+	private String describeText() {
 		StringBuffer sb = new StringBuffer();
 		describeLine(sb, TurNutchConstants.SERVER_URL, "Defines the fully qualified URL of Turing.", this.url);
 		describeLine(sb, TurNutchConstants.SITE, "Defines the Turing Semantic Navigation Site.", this.site);
@@ -294,7 +289,19 @@ public class TurNutchIndexWriter implements IndexWriter {
 				Boolean.toString(this.auth));
 		describeLine(sb, TurNutchConstants.USERNAME, "The username of Turing server.", this.username);
 		describeLine(sb, TurNutchConstants.PASSWORD, "The password of Turing server.", this.password);
-		logger.info(sb.toString());
+		return sb.toString();
+	}
+
+	private void useSolrConfig() {
+		String[] fullUrl = this.config.get("solr.server.url").split("/");
+		this.site = fullUrl[fullUrl.length - 1];
+		String[] partialUrl = Arrays.copyOf(fullUrl, fullUrl.length - 1);
+		this.url = String.join("/", partialUrl);
+	}
+
+	private void useTuringConfig() {
+		this.url = this.config.get(TurNutchConstants.SERVER_URL, "https://localhost:2700");
+		this.site = this.config.get(TurNutchConstants.SITE, "Sample");
 	}
 
 	private void init(JobConf job) {

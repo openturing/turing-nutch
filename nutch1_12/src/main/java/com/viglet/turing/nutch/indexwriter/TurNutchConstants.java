@@ -14,4 +14,6 @@ public interface TurNutchConstants {
 	public static final String USERNAME = TUR_PREFIX + "username";
 
 	public static final String PASSWORD = TUR_PREFIX + "password";
+	
+	public static final String FORCE_CONFIG = TUR_PREFIX + "force.config";
 }
