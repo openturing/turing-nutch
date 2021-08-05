@@ -126,29 +126,6 @@ public class TurNutchIndexWriter implements IndexWriter {
 
 		attributes.put("type", "Page");
 
-		URL url = new URL(attributes.get("url").toString());
-		String path[] = url.getPath().split("/");
-		String date = null;
-		if (path.length >= 4) {
-			if (isNumeric(path[1]) && isNumeric(path[2]) && isNumeric(path[3])) {
-				date = String.format("%s/%s/%s", path[1], path[2], path[3]);
-			}
-		}
-
-		Date dt = new Date();
-		if (date != null) {
-			DateFormat dateFormat = new SimpleDateFormat("yyyy/MM/dd");
-			try {
-				dt = dateFormat.parse(date);
-			} catch (ParseException e1) {
-				e1.printStackTrace();
-			}
-		}
-
-		TimeZone tz = TimeZone.getTimeZone("UTC");
-		DateFormat df = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm'Z'");
-		df.setTimeZone(tz);
-		attributes.put("displaydate", df.format(dt));
 		turSNJobItem.setAttributes(attributes);
 		turSNJobItems.add(turSNJobItem);
 		totalAdds++;
